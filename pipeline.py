@@ -1,5 +1,6 @@
 import requests
 import pandas as pd
+import time
 
 
 def process_pool_ids():
@@ -30,64 +31,61 @@ def process_pool_ids():
     return df
 
 
-def get_historical_data(df, max_retries=3, delay=1):
+def get_historical_data(df, attempts=30):
     historical_df = pd.DataFrame()
+    pool_ids = df["pool_id"].tolist()
 
-    for index, row in df.iterrows():
-        pool_id = row["pool_id"]
-        chain = row["chain"]
-        symbol = row["symbol"]
-        project = row["project"]
-        stablecoin = row["stablecoin"]
-        count = row["count"]
-        try:
-            for attempt in range(max_retries):
-
+    for pool_id in pool_ids:
+        success = False
+        for attempt in range(attempts):
+            try:
                 response = requests.get(f"https://yields.llama.fi/chart/{pool_id}")
-
                 if response.status_code == 200:
+                    historical_df["pool_id"] = pool_id
                     historical_data = response.json()["data"]
                     pool_history_df = pd.DataFrame(historical_data)
-
-                    # Add metadata to each historical entry
-                    pool_history_df["pool_id"] = pool_id
-                    pool_history_df["chain"] = chain
-                    pool_history_df["symbol"] = symbol
-                    pool_history_df["project"] = project
-                    pool_history_df["stablecoin"] = stablecoin
-                    pool_history_df["count"] = count
-
-                    # Append to the main historical DataFrame
                     historical_df = pd.concat(
                         [historical_df, pool_history_df], ignore_index=True
                     )
-                    break  # Exit retry loop on success
-
+                    success = True
+                    break
                 else:
                     print(
                         f"Debug: API fetch failed for pool_id: {pool_id} - Status Code: {response.status_code}"
                     )
                     break
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 429:
+                    print(
+                        f"Rate limit exceeded for pool_id: {pool_id}, attempt {attempt + 1}/{attempts}"
+                    )
+                    time.sleep(20)  # Increased sleep time to 20 seconds
+                    continue  # Try again with the same pool_id
+            except Exception as e:
+                print(f"Attempt failed for pool_id: {pool_id}. Error: {e}")
+                break
 
-        except Exception as e:
-            print(f"Attempt {attempt + 1} failed for pool_id: {pool_id}. Error: {e}")
-            break
+        if not success:
+            print(
+                f"Failed to fetch data for pool_id: {pool_id} after {attempts} attempts"
+            )
+
     return historical_df
 
 
 def main():
 
     pooldf = process_pool_ids()
-    # if pooldf.empty:
-    #     print("No data found")
-    # else:
-    #     # Fetch and add historical data
-    #     historical_df = get_historical_data(pooldf)
+    if pooldf.empty:
+        print("No data found")
+    else:
+        # Fetch and add historical data
+        historical_df = get_historical_data(pooldf)
 
-    #     # Save combined historical data to CSV
-    #     historical_df.to_csv("data/pools_historical.csv", index=False)
+        # Save combined historical data to CSV
+        historical_df.to_csv("data/pools_historical.csv", index=False)
 
-    #     print("Historical data saved to data/all_pool_historical_data.csv")
+        print("Historical data saved to data/all_pool_historical_data.csv")
 
 
 if __name__ == "__main__":

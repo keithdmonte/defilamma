@@ -4,8 +4,13 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+pandas = "*"
+requests = "*"
+psycopg2-binary = "*"
+httpx = "*"
 
 [dev-packages]
+black="*"
 
 [requires]
-python_version = "3.10"
+python_version = "3.12.1"
